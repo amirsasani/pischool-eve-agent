@@ -37,7 +37,7 @@ requests.
 
 ## Requirements
 
-- Python 3.10 or newer
+- Python 3.11 or newer (tested with Python 3.14.2)
 - Network access to the APIs for live requests
 - Ollama installed and running
 - Dependencies pinned in [`requirements.txt`](requirements.txt)
