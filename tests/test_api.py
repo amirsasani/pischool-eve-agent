@@ -16,6 +16,7 @@ class AgentAPITests(unittest.TestCase):
                 "eve_agent.api.invoke_agent_turn",
                 new_callable=AsyncMock,
             ) as invoke_agent_turn,
+            patch("eve_agent.api.append_trace_record") as append_trace_record,
         ):
             build_agent.return_value = fake_agent
             invoke_agent_turn.return_value = {
@@ -39,7 +40,7 @@ class AgentAPITests(unittest.TestCase):
                 )
                 invalid_response = client.post(
                     "/chat",
-                    json={"session_id": "  ", "message": "hello"},
+                    json={"session_id": "validation-session", "message": "  "},
                 )
 
         self.assertEqual(
@@ -48,6 +49,13 @@ class AgentAPITests(unittest.TestCase):
         )
         self.assertEqual(second_response.status_code, 200)
         self.assertEqual(invalid_response.status_code, 422)
+        invalid_trace = append_trace_record.call_args.args[0]
+        self.assertEqual(invalid_trace["request_id"], invalid_response.json()["request_id"])
+        self.assertEqual(invalid_trace["session_id"], "validation-session")
+        self.assertEqual(invalid_trace["method"], "POST")
+        self.assertEqual(invalid_trace["path"], "/chat")
+        self.assertEqual(invalid_trace["status"], "rejected")
+        self.assertEqual(invalid_trace["steps"][0]["error"]["type"], "RequestValidationError")
         build_agent.assert_awaited_once_with()
         self.assertEqual(
             invoke_agent_turn.await_args_list,

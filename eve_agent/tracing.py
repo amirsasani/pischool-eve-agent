@@ -85,10 +85,7 @@ class AgentTrace:
     def write(self) -> None:
         self.record["finished_at"] = datetime.now(timezone.utc).isoformat()
         self.record["duration_ms"] = round((time.perf_counter() - self._started) * 1000, 3)
-        path = Path(TRACE_FILE)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as trace_file:
-            trace_file.write(json.dumps(self.record, ensure_ascii=False, default=str) + "\n")
+        append_trace_record(self.record)
 
     def _start_step(self, run_id: str, details: dict[str, Any]) -> None:
         step = {"status": "running", **details}
@@ -137,3 +134,10 @@ def _trace_tool_output(output: Any) -> str:
             + TRACE_TRUNCATION_MARKER
         )
     return content
+
+
+def append_trace_record(record: dict[str, Any]) -> None:
+    path = Path(TRACE_FILE)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as trace_file:
+        trace_file.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
