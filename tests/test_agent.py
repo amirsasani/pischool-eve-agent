@@ -1,4 +1,8 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableLambda
@@ -181,6 +185,97 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(len(observed_tool_results[0].content), MAX_TOOL_OUTPUT_CHARS)
         self.assertTrue(observed_tool_results[0].content.endswith(TOOL_OUTPUT_TRUNCATION_MARKER))
         self.assertLessEqual(len(stored_tool_result.content), MAX_TOOL_OUTPUT_CHARS)
+
+    async def test_trace_records_tool_call_and_final_answer(self) -> None:
+        @tool
+        def lookup_weather(latitude: float, date: str) -> str:
+            """Return example weather data."""
+            return f"Maximum temperature at {latitude} on {date}: 30.9 °C"
+
+        def scripted_model(messages: list[object]) -> AIMessage:
+            tool_result = next(
+                (message for message in reversed(messages) if isinstance(message, ToolMessage)),
+                None,
+            )
+            if tool_result is not None:
+                return AIMessage(content=f"According to Open-Meteo: {tool_result.content}")
+            return AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "lookup_weather",
+                        "args": {"latitude": 34.05, "date": "2024-08-01"},
+                        "id": "trace-weather-call",
+                        "type": "tool_call",
+                    }
+                ],
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            trace_path = Path(directory) / "agent-traces.jsonl"
+            with patch("eve_agent.tracing.TRACE_FILE", trace_path):
+                agent = _create_agent_graph(
+                    RunnableLambda(scripted_model),
+                    [lookup_weather],
+                )
+                result = await invoke_agent_turn(
+                    agent,
+                    "trace-session",
+                    "What was the temperature at 34.05 on 2024-08-01?",
+                )
+
+            trace = json.loads(trace_path.read_text(encoding="utf-8").strip())
+
+        tool_step = next(step for step in trace["steps"] if step["step"] == "tool")
+        self.assertEqual(trace["session_id"], "trace-session")
+        self.assertEqual(trace["status"], "completed")
+        self.assertIn("30.9 °C", trace["final_answer"])
+        self.assertEqual(tool_step["tool_name"], "lookup_weather")
+        self.assertEqual(tool_step["arguments"], {"latitude": 34.05, "date": "2024-08-01"})
+        self.assertGreaterEqual(tool_step["duration_ms"], 0)
+        self.assertIn("assistant", [step["step"] for step in trace["steps"]])
+        self.assertIn("30.9 °C", result["messages"][-1].content)
+
+    async def test_tool_error_is_traced_and_agent_returns_failure_message(self) -> None:
+        @tool
+        def failing_tool() -> str:
+            """Simulate an upstream service failure."""
+            raise RuntimeError("upstream unavailable")
+
+        def scripted_model(messages: list[object]) -> AIMessage:
+            tool_result = next(
+                (message for message in reversed(messages) if isinstance(message, ToolMessage)),
+                None,
+            )
+            if tool_result is not None:
+                return AIMessage(content=f"The attempted lookup failed: {tool_result.content}")
+            return AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "failing_tool",
+                        "args": {},
+                        "id": "trace-error-call",
+                        "type": "tool_call",
+                    }
+                ],
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            trace_path = Path(directory) / "agent-traces.jsonl"
+            with patch("eve_agent.tracing.TRACE_FILE", trace_path):
+                agent = _create_agent_graph(RunnableLambda(scripted_model), [failing_tool])
+                result = await invoke_agent_turn(agent, "error-session", "Try the lookup.")
+
+            trace = json.loads(trace_path.read_text(encoding="utf-8").strip())
+
+        tool_step = next(step for step in trace["steps"] if step["step"] == "tool")
+        self.assertEqual(trace["status"], "completed")
+        self.assertEqual(tool_step["status"], "error")
+        self.assertEqual(tool_step["tool_name"], "failing_tool")
+        self.assertEqual(tool_step["error"]["type"], "RuntimeError")
+        self.assertIn("upstream unavailable", tool_step["error"]["message"])
+        self.assertIn("failed", result["messages"][-1].content)
 
 
 if __name__ == "__main__":
