@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import RemoveMessage, ToolMessage
 
 from eve_agent.settings import TRACE_FILE
 
@@ -39,12 +39,20 @@ class AgentTrace:
         if event_type == "on_chain_start":
             node = event.get("metadata", {}).get("langgraph_node")
             if node == name:
-                self._start_step(run_id, {"step": node})
+                details = {"step": node}
+                if node in {"prune_before_model", "prune_after_turn"}:
+                    details["messages_before"] = len(data.get("input", {}).get("messages", []))
+                self._start_step(run_id, details)
         elif event_type == "on_chain_end":
             if name == "LangGraph":
                 self._result = data.get("output")
             else:
-                self._finish_step(run_id)
+                step = self._finish_step(run_id)
+                if step and step["step"] in {"prune_before_model", "prune_after_turn"}:
+                    removed = data.get("output", {}).get("messages", [])
+                    removed_count = sum(isinstance(message, RemoveMessage) for message in removed)
+                    step["messages_removed"] = removed_count
+                    step["messages_retained"] = step["messages_before"] - removed_count
         elif event_type == "on_chain_error":
             self._fail_step(run_id, data.get("error"))
         elif event_type == "on_tool_start":

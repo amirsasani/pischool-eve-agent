@@ -148,6 +148,58 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(retained_human_messages, latest_human_messages)
 
+    async def test_history_pruning_trace_counts_removed_tool_messages(self) -> None:
+        tool_called = False
+        latest_model_input: list[object] = []
+
+        @tool
+        def lookup_weather() -> str:
+            """Return example weather data."""
+            return "Maximum temperature: 30.9 °C"
+
+        def scripted_model(messages: list[object]) -> AIMessage:
+            nonlocal tool_called, latest_model_input
+            latest_model_input = messages
+            tool_result = next(
+                (message for message in reversed(messages) if isinstance(message, ToolMessage)),
+                None,
+            )
+            if tool_result is not None:
+                return AIMessage(content=f"Using the prior result: {tool_result.content}")
+            if not tool_called:
+                tool_called = True
+                return AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "lookup_weather",
+                            "args": {},
+                            "id": "prune-weather-call",
+                            "type": "tool_call",
+                        }
+                    ],
+                )
+            return AIMessage(content="Using retained conversation context.")
+
+        with tempfile.TemporaryDirectory() as directory:
+            trace_path = Path(directory) / "agent-traces.jsonl"
+            with patch("eve_agent.tracing.TRACE_FILE", trace_path):
+                agent = _create_agent_graph(RunnableLambda(scripted_model), [lookup_weather])
+                for turn in range(MAX_HISTORY_TURNS + 1):
+                    await invoke_agent_turn(agent, "prune-tool-session", f"Turn {turn}")
+
+            traces = [
+                json.loads(line)
+                for line in trace_path.read_text(encoding="utf-8").splitlines()
+            ]
+
+        prune_step = next(
+            step for step in traces[-1]["steps"] if step["step"] == "prune_before_model"
+        )
+        self.assertEqual(prune_step["messages_removed"], 4)
+        self.assertEqual(prune_step["messages_retained"], 11)
+        self.assertFalse(any(isinstance(message, ToolMessage) for message in latest_model_input))
+
     async def test_oversized_tool_output_is_truncated_before_model_call(self) -> None:
         observed_tool_results: list[ToolMessage] = []
 
