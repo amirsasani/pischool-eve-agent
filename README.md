@@ -96,6 +96,29 @@ curl -X POST http://127.0.0.1:8000/chat \
 
 Each successful request returns JSON with `session_id` and `answer`.
 
+## Run the end-to-end demo
+
+With the MCP server and API running in separate terminals as described above,
+run:
+
+```bash
+source .venv/bin/activate
+python -m scripts.run_demo
+```
+
+The demo creates one session and sends three requests: a historical weather
+question that calls Open-Meteo, a follow-up that relies on the same location
+and dates without repeating them, and a request with an invalid date that
+forces a tool error. The API prints its answers and writes one trace record
+per request to `TRACE_FILE`.
+
+[`examples/traces/stage8-demo.jsonl`](./examples/traces/stage8-demo.jsonl) is a
+sample live run. Its three records share a session ID: the first includes the
+weather tool call, the second has no tool step and uses the prior context, and
+the third records the invalid-date error and the agent's reply. Normal API
+requests write to the ignored `logs/agent-traces.jsonl` by default, not to
+this committed sample.
+
 The graph has an assistant node and an MCP-backed tools node. The assistant
 routes tool calls to the tools node, then runs again with the result; it stops
 when the model returns a final answer. Tool definitions are loaded over
