@@ -56,8 +56,9 @@ cp -n .env.example .env
 The `.env` file sets `API_HOST` and `API_PORT` (defaults `127.0.0.1` and
 `8000`), `MCP_SERVER_HOST` and `MCP_SERVER_PORT` (defaults `127.0.0.1` and
 `8001`), and `OLLAMA_MODEL` (default `qwen3.5:4b`). The MCP client uses the
-server settings to connect at `http://<host>:<port>/mcp`. `.env` is ignored by
-Git; commit only the non-sensitive `.env.example` template.
+server settings to connect at `http://<host>:<port>/mcp`. `TRACE_FILE` selects
+the JSONL request trace path and defaults to `logs/agent-traces.jsonl`. `.env`
+is ignored by Git; commit only the non-sensitive `.env.example` template.
 
 ## Run the API
 
@@ -110,6 +111,17 @@ Conversation checkpoints use LangGraph's in-memory `MemorySaver`. They are
 available only to that agent instance and are lost when the process exits.
 Persistent or multi-process deployments need a database-backed LangGraph
 checkpointer.
+
+## Traces and tool errors
+
+Each `/chat` request appends one JSON record to the file configured by
+`TRACE_FILE`. The trace includes the session and trace IDs, input, graph steps,
+tool names and arguments, durations, tool results or errors, and final answer.
+Tool result text in traces is capped at 8,000 characters. Tool exceptions are
+returned to the graph as tool errors so the agent can explain the failure;
+the error is recorded in the request trace. The default `logs/` directory is
+Git-ignored. Traces contain conversation input and tool data, so keep them
+local unless you have checked their contents before sharing.
 
 ## Run tests
 
