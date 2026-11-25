@@ -4,7 +4,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.runnables import RunnableLambda
 from langchain_core.tools import tool
 
-from eve_agent.agent import SYSTEM_PROMPT, _create_agent_graph
+from eve_agent.agent import SYSTEM_PROMPT, _create_agent_graph, invoke_agent_turn
 
 
 class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
@@ -57,8 +57,10 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
             )
 
         agent = _create_agent_graph(RunnableLambda(scripted_model), [get_historical_weather])
-        result = await agent.ainvoke(
-            {"messages": [HumanMessage(content="What was the weather in Los Angeles?")]}
+        result = await invoke_agent_turn(
+            agent,
+            "weather-session",
+            "What was the weather in Los Angeles?",
         )
 
         self.assertEqual(len(tool_calls), 1)
@@ -72,6 +74,38 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
                 for messages in model_inputs
             )
         )
+
+    async def test_history_is_persisted_per_session_id(self) -> None:
+        model_inputs: list[list[object]] = []
+
+        def scripted_model(messages: list[object]) -> AIMessage:
+            model_inputs.append(messages)
+            return AIMessage(content="Understood.")
+
+        agent = _create_agent_graph(RunnableLambda(scripted_model), [])
+
+        await invoke_agent_turn(agent, "session-a", "The site is 34.05, -118.24.")
+        await invoke_agent_turn(agent, "session-a", "What was the same date?")
+        await invoke_agent_turn(agent, "session-b", "Start a new conversation.")
+
+        human_messages = [
+            [message.content for message in messages if isinstance(message, HumanMessage)]
+            for messages in model_inputs
+        ]
+        self.assertEqual(
+            human_messages,
+            [
+                ["The site is 34.05, -118.24."],
+                ["The site is 34.05, -118.24.", "What was the same date?"],
+                ["Start a new conversation."],
+            ],
+        )
+
+    async def test_empty_session_id_is_rejected(self) -> None:
+        agent = _create_agent_graph(RunnableLambda(lambda _: AIMessage(content="ok")), [])
+
+        with self.assertRaisesRegex(ValueError, "session_id"):
+            await invoke_agent_turn(agent, "  ", "hello")
 
 
 if __name__ == "__main__":
