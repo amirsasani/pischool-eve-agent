@@ -77,6 +77,7 @@ python -m eve_agent.mcp_server
 In another terminal, invoke the LangGraph agent:
 
 ```bash
+source .venv/bin/activate
 python - <<'PY'
 import asyncio
 
