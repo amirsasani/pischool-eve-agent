@@ -51,16 +51,15 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
 cp -n .env.example .env
-python -m eve_agent.mcp_server
 ```
 
-The `.env` file sets `MCP_SERVER_HOST` and `MCP_SERVER_PORT`; defaults are
-`127.0.0.1` and `8001`. `OLLAMA_MODEL` selects the local model and defaults to
-`qwen3.5:4b`. The MCP client uses the server settings to connect at
-`http://<host>:<port>/mcp`. `.env` is ignored by Git; commit only the
-non-sensitive `.env.example` template.
+The `.env` file sets `API_HOST` and `API_PORT` (defaults `127.0.0.1` and
+`8000`), `MCP_SERVER_HOST` and `MCP_SERVER_PORT` (defaults `127.0.0.1` and
+`8001`), and `OLLAMA_MODEL` (default `qwen3.5:4b`). The MCP client uses the
+server settings to connect at `http://<host>:<port>/mcp`. `.env` is ignored by
+Git; commit only the non-sensitive `.env.example` template.
 
-## Run the agent
+## Run the API
 
 Pull the configured model if it is not already installed:
 
@@ -68,49 +67,44 @@ Pull the configured model if it is not already installed:
 ollama pull qwen3.5:4b
 ```
 
-Start the MCP server in one terminal:
-
-```bash
-python -m eve_agent.mcp_server
-```
-
-In another terminal, invoke the LangGraph agent:
+Start the MCP server in one terminal from the repository root:
 
 ```bash
 source .venv/bin/activate
-python - <<'PY'
-import asyncio
-
-from eve_agent.agent import build_agent, invoke_agent_turn
-
-async def main():
-    agent = await build_agent()
-    result = await invoke_agent_turn(
-        agent,
-        session_id="demo-session",
-        message=(
-            "Use the historical weather tool for latitude 34.05, "
-            "longitude -118.24, from 2024-08-01 to 2024-08-03. "
-            "Report daily maximum temperatures and precipitation "
-            "with units and identify the source."
-        ),
-    )
-    print(result["messages"][-1].content)
-
-asyncio.run(main())
-PY
+python -m eve_agent.mcp_server
 ```
+
+Start the HTTP API in another terminal:
+
+```bash
+source .venv/bin/activate
+python -m eve_agent.api
+```
+
+Send a question and a follow-up with the same `session_id`:
+
+```bash
+curl -X POST http://127.0.0.1:8000/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"session_id":"demo-session","message":"What was the weather in Los Angeles from 2024-08-01 to 2024-08-03?"}'
+
+curl -X POST http://127.0.0.1:8000/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"session_id":"demo-session","message":"What was the precipitation over the same dates?"}'
+```
+
+Each successful request returns JSON with `session_id` and `answer`.
 
 The graph has an assistant node and an MCP-backed tools node. The assistant
 routes tool calls to the tools node, then runs again with the result; it stops
 when the model returns a final answer. Tool definitions are loaded over
 Streamable HTTP by [`eve_agent/mcp_client.py`](eve_agent/mcp_client.py).
 
-Pass the same `session_id` to `invoke_agent_turn` for follow-up questions in
-the same conversation; use a different ID for a separate conversation. The
-agent retains the latest six user turns (including their assistant and tool
-messages) and truncates each tool result to at most 8,000 characters before
-passing it back to the model.
+The API builds one agent graph at startup. Send the same `session_id` for
+follow-up questions in that process; use a different ID for a separate
+conversation. The agent retains the latest six user turns (including their
+assistant and tool messages) and truncates each tool result to at most 8,000
+characters before passing it back to the model.
 
 Conversation checkpoints use LangGraph's in-memory `MemorySaver`. They are
 available only to that agent instance and are lost when the process exits.
