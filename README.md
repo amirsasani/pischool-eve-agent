@@ -81,23 +81,20 @@ source .venv/bin/activate
 python - <<'PY'
 import asyncio
 
-from langchain_core.messages import HumanMessage
-from eve_agent.agent import build_agent
+from eve_agent.agent import build_agent, invoke_agent_turn
 
 async def main():
     agent = await build_agent()
-    result = await agent.ainvoke({
-        "messages": [
-            HumanMessage(
-                content=(
-                    "Use the historical weather tool for latitude 34.05, "
-                    "longitude -118.24, from 2024-08-01 to 2024-08-03. "
-                    "Report daily maximum temperatures and precipitation "
-                    "with units and identify the source."
-                )
-            )
-        ]
-    })
+    result = await invoke_agent_turn(
+        agent,
+        session_id="demo-session",
+        message=(
+            "Use the historical weather tool for latitude 34.05, "
+            "longitude -118.24, from 2024-08-01 to 2024-08-03. "
+            "Report daily maximum temperatures and precipitation "
+            "with units and identify the source."
+        ),
+    )
     print(result["messages"][-1].content)
 
 asyncio.run(main())
@@ -108,6 +105,17 @@ The graph has an assistant node and an MCP-backed tools node. The assistant
 routes tool calls to the tools node, then runs again with the result; it stops
 when the model returns a final answer. Tool definitions are loaded over
 Streamable HTTP by [`eve_agent/mcp_client.py`](eve_agent/mcp_client.py).
+
+Pass the same `session_id` to `invoke_agent_turn` for follow-up questions in
+the same conversation; use a different ID for a separate conversation. The
+agent retains the latest six user turns (including their assistant and tool
+messages) and truncates each tool result to at most 8,000 characters before
+passing it back to the model.
+
+Conversation checkpoints use LangGraph's in-memory `MemorySaver`. They are
+available only to that agent instance and are lost when the process exits.
+Persistent or multi-process deployments need a database-backed LangGraph
+checkpointer.
 
 ## Run tests
 
