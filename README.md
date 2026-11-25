@@ -39,6 +39,7 @@ requests.
 
 - Python 3.10 or newer
 - Network access to the APIs for live requests
+- Ollama installed and running
 - Dependencies pinned in [`requirements.txt`](requirements.txt)
 
 ## Install and run
@@ -54,25 +55,58 @@ python -m eve_agent.mcp_server
 ```
 
 The `.env` file sets `MCP_SERVER_HOST` and `MCP_SERVER_PORT`; defaults are
-`127.0.0.1` and `8001`. The MCP client uses these same settings to connect at
+`127.0.0.1` and `8001`. `OLLAMA_MODEL` selects the local model and defaults to
+`qwen3.5:4b`. The MCP client uses the server settings to connect at
 `http://<host>:<port>/mcp`. `.env` is ignored by Git; commit only the
 non-sensitive `.env.example` template.
 
-## Load tools through MCP
+## Run the agent
 
-With the MCP server running, the LangChain MCP adapter can discover its tools:
+Pull the configured model if it is not already installed:
 
-```python
-import asyncio
-
-from eve_agent.mcp_client import load_mcp_tools
-
-tools = asyncio.run(load_mcp_tools())
-print([tool.name for tool in tools])
+```bash
+ollama pull qwen3.5:4b
 ```
 
-The tools are loaded over Streamable HTTP by
-[`eve_agent/mcp_client.py`](eve_agent/mcp_client.py).
+Start the MCP server in one terminal:
+
+```bash
+python -m eve_agent.mcp_server
+```
+
+In another terminal, invoke the LangGraph agent:
+
+```bash
+python - <<'PY'
+import asyncio
+
+from langchain_core.messages import HumanMessage
+from eve_agent.agent import build_agent
+
+async def main():
+    agent = await build_agent()
+    result = await agent.ainvoke({
+        "messages": [
+            HumanMessage(
+                content=(
+                    "Use the historical weather tool for latitude 34.05, "
+                    "longitude -118.24, from 2024-08-01 to 2024-08-03. "
+                    "Report daily maximum temperatures and precipitation "
+                    "with units and identify the source."
+                )
+            )
+        ]
+    })
+    print(result["messages"][-1].content)
+
+asyncio.run(main())
+PY
+```
+
+The graph has an assistant node and an MCP-backed tools node. The assistant
+routes tool calls to the tools node, then runs again with the result; it stops
+when the model returns a final answer. Tool definitions are loaded over
+Streamable HTTP by [`eve_agent/mcp_client.py`](eve_agent/mcp_client.py).
 
 ## Run tests
 
@@ -82,5 +116,5 @@ From the repository root, with the requirements installed:
 python3 -m unittest discover -s tests -v
 ```
 
-API client and MCP server tests use mocked responses and do not require network
-access.
+Tests use mocked API responses and a scripted model, so they do not require
+network access or a running Ollama instance.
