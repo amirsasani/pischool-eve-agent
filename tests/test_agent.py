@@ -16,6 +16,7 @@ from eve_agent.agent import (
     _create_agent_graph,
     invoke_agent_turn,
 )
+from eve_agent.tracing import AgentTrace
 
 
 class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
@@ -276,6 +277,44 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tool_step["error"]["type"], "RuntimeError")
         self.assertIn("upstream unavailable", tool_step["error"]["message"])
         self.assertIn("failed", result["messages"][-1].content)
+
+    def test_mcp_tool_error_trace_extracts_readable_message(self) -> None:
+        trace = AgentTrace("error-session", "Try the lookup.")
+        trace.observe(
+            {
+                "event": "on_tool_start",
+                "name": "get_historical_weather",
+                "run_id": "tool-run",
+                "data": {"input": {"start_date": "2024-99-99"}},
+            }
+        )
+        trace.observe(
+            {
+                "event": "on_tool_end",
+                "name": "get_historical_weather",
+                "run_id": "tool-run",
+                "data": {
+                    "output": ToolMessage(
+                        content=[
+                            {
+                                "type": "text",
+                                "text": "Error executing tool: start_date must use YYYY-MM-DD format",
+                            }
+                        ],
+                        name="get_historical_weather",
+                        tool_call_id="failed-call",
+                        status="error",
+                    )
+                },
+            }
+        )
+
+        tool_step = trace.record["steps"][0]
+        self.assertEqual(tool_step["status"], "error")
+        self.assertEqual(
+            tool_step["error"]["message"],
+            "Error executing tool: start_date must use YYYY-MM-DD format",
+        )
 
 
 if __name__ == "__main__":

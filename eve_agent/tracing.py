@@ -116,6 +116,14 @@ class AgentTrace:
 def _error_details(error: Any) -> dict[str, str]:
     if isinstance(error, BaseException):
         return {"type": type(error).__name__, "message": str(error)}
+    if isinstance(error, list):
+        messages = [
+            item["text"]
+            for item in error
+            if isinstance(item, dict) and isinstance(item.get("text"), str)
+        ]
+        if messages:
+            return {"type": "ToolError", "message": "\n".join(messages)}
     return {"type": "ToolError", "message": str(error)}
 
 
