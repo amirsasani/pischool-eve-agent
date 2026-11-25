@@ -62,7 +62,10 @@ def _fetch_json(
         with urlopen(request, timeout=timeout) as response:
             body = response.read()
     except HTTPError as exc:
-        detail = _error_detail(exc.read())
+        try:
+            detail = _error_detail(exc.read())
+        finally:
+            exc.close()
         raise ExternalAPIError(
             service,
             f"HTTP {exc.code}: {detail}",

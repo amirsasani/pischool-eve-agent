@@ -1,25 +1,31 @@
-# EVE Earth Observation API Clients
+# EVE Earth Observation MCP Server
 
-This repository contains the API-client portion of a Pi School AI Research
-Engineer interview assignment. It provides Python clients for NASA EONET
-wildfire events and Open-Meteo historical weather.
+This repository contains API clients and an MCP server for NASA EONET
+wildfire-category events and Open-Meteo historical weather. It is part of a
+Pi School AI Research Engineer interview assignment.
 
-## API clients
+## MCP server
 
-[`eve_agent/api_clients.py`](eve_agent/api_clients.py) provides:
+[`eve_agent/mcp_server.py`](eve_agent/mcp_server.py) exposes two MCP tools over
+Streamable HTTP at `http://127.0.0.1:8001/mcp`:
 
-- `search_open_wildfires(bbox, ...)` to retrieve open EONET wildfire-category
-  events within a bounding box. The box format is
-  `(min_lon, max_lat, max_lon, min_lat)`. Optional start and end dates and a
-  result limit are supported.
-- `get_historical_weather(latitude, longitude, start_date, end_date)` to
-  retrieve daily maximum temperature and total precipitation.
+- `search_wildfire_events` retrieves open EONET wildfire-category events
+  inside a bounding box. The box arguments are minimum longitude, maximum
+  latitude, maximum longitude, and minimum latitude. Optional start and end
+  dates must be supplied together; `limit` defaults to 20.
+- `get_historical_weather` retrieves daily maximum temperature and total
+  precipitation for the requested coordinates and dates.
 
-Inputs are validated before requests are made. Upstream request failures or
-unexpected responses raise `ExternalAPIError`.
+The EONET tool keeps event identifiers, titles, descriptions, source links,
+magnitudes, and geometry dates. Point coordinates are included; polygon
+coordinates are omitted to keep the tool response compact.
+
+Both tools call the API clients in
+[`eve_agent/api_clients.py`](eve_agent/api_clients.py). Inputs are validated
+before requests are made; upstream failures are returned as MCP tool errors.
 
 EONET events are catalogued wildfire-category events and may include prescribed
-burns; the category alone does not establish that a fire is uncontrolled.
+burns, so the category alone does not establish that a fire is uncontrolled.
 
 ## Data sources
 
@@ -33,29 +39,29 @@ requests.
 
 - Python 3.10 or newer
 - Network access to the APIs for live requests
+- Dependencies pinned in [`requirements.txt`](requirements.txt)
 
-The clients and tests use only the Python standard library.
+## Install and run
+
+From the repository root:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m eve_agent.mcp_server
+```
+
+The server listens on `127.0.0.1:8001`; MCP clients connect to
+`http://127.0.0.1:8001/mcp`.
 
 ## Run tests
 
-From the repository root:
+From the repository root, with the requirements installed:
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
 
-Tests use mocked HTTP responses and do not require network access.
-
-## Example
-
-```python
-from eve_agent.api_clients import get_historical_weather, search_open_wildfires
-
-events = search_open_wildfires((-80, 39, -79, 38), limit=5)
-weather = get_historical_weather(
-    34.05, -118.24, "2024-08-01", "2024-08-03"
-)
-
-print(events)
-print(weather)
-```
+API client and MCP server tests use mocked responses and do not require network
+access.
