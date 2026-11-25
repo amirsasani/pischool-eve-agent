@@ -156,3 +156,11 @@ python3 -m unittest discover -s tests -v
 
 Tests use mocked API responses and a scripted model, so they do not require
 network access or a running Ollama instance.
+
+## Scope and next steps
+
+This submission keeps the required core to one agent, two MCP tools, and
+process-local in-memory conversation state. The API has no authentication or
+rate limiting, and the optional A2A and Agent Skills bonuses are not
+implemented. For a deployed service, the next steps would be a persistent
+database-backed checkpointer, API access controls, and operational monitoring.
