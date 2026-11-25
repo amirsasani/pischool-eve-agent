@@ -8,6 +8,7 @@ from eve_agent.api_clients import (
     get_historical_weather as fetch_historical_weather,
     search_open_wildfires,
 )
+from eve_agent.settings import MCP_SERVER_HOST, MCP_SERVER_PORT
 
 mcp = FastMCP(
     "EVE Earth Observation",
@@ -15,8 +16,8 @@ mcp = FastMCP(
         "Report data returned by NASA EONET and Open-Meteo. "
         "EONET wildfire-category events may include prescribed burns."
     ),
-    host="127.0.0.1",
-    port=8001,
+    host=MCP_SERVER_HOST,
+    port=MCP_SERVER_PORT,
 )
 
 

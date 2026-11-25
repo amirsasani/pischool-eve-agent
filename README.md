@@ -49,11 +49,30 @@ From the repository root:
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
+cp -n .env.example .env
 python -m eve_agent.mcp_server
 ```
 
-The server listens on `127.0.0.1:8001`; MCP clients connect to
-`http://127.0.0.1:8001/mcp`.
+The `.env` file sets `MCP_SERVER_HOST` and `MCP_SERVER_PORT`; defaults are
+`127.0.0.1` and `8001`. The MCP client uses these same settings to connect at
+`http://<host>:<port>/mcp`. `.env` is ignored by Git; commit only the
+non-sensitive `.env.example` template.
+
+## Load tools through MCP
+
+With the MCP server running, the LangChain MCP adapter can discover its tools:
+
+```python
+import asyncio
+
+from eve_agent.mcp_client import load_mcp_tools
+
+tools = asyncio.run(load_mcp_tools())
+print([tool.name for tool in tools])
+```
+
+The tools are loaded over Streamable HTTP by
+[`eve_agent/mcp_client.py`](eve_agent/mcp_client.py).
 
 ## Run tests
 
