@@ -160,6 +160,19 @@ ordinary turns but loads the full
 [`examples/traces/data-reliability-demo.jsonl`](./examples/traces/data-reliability-demo.jsonl)
 shows the skill-loading tool call and its resulting answer.
 
+```mermaid
+flowchart LR
+    U[User turn] --> M[Agent sees MCP tools and skill-loader description]
+    M --> D{Reliability review requested?}
+    D -->|No| T[Normal response; MCP tools as needed]
+    T --> E[Tool results remain in session history]
+    D -->|Yes| L[Call load_data_reliability_report]
+    L --> S[Load skills/data-reliability-report/SKILL.md]
+    S --> A[Review existing tool results; do not refetch]
+    E -. available in the session .-> A
+    A --> R[Report sources, dates, coordinates, and limitations]
+```
+
 The graph has an assistant node and an MCP-backed tools node. The assistant
 routes tool calls to the tools node, then runs again with the result; it stops
 when the model returns a final answer. Tool definitions are loaded over
