@@ -11,14 +11,107 @@ from eve_agent.mcp_server import mcp
 
 
 class MCPServerTests(unittest.IsolatedAsyncioTestCase):
-    async def test_server_exposes_both_api_tools(self) -> None:
+    async def test_server_exposes_api_and_location_tools(self) -> None:
         async with create_connected_server_and_client_session(mcp._mcp_server) as client:
             result = await client.list_tools()
 
         self.assertEqual(
             {tool.name for tool in result.tools},
-            {"search_wildfire_events", "get_historical_weather"},
+            {
+                "resolve_location",
+                "search_wildfire_events",
+                "search_wildfires_near_location",
+                "get_historical_weather",
+            },
         )
+
+    async def test_resolve_location_returns_geocoding_matches(self) -> None:
+        main_city = {
+            "name": "Turin",
+            "latitude": 45.0703,
+            "longitude": 7.6869,
+            "admin1": "Piedmont",
+            "admin2": "Province of Turin",
+            "country": "Italy",
+            "population": 847287,
+        }
+        smaller_locality = {
+            **main_city,
+            "latitude": 45.21154,
+            "longitude": 7.73357,
+            "population": 57,
+        }
+        with patch(
+            "eve_agent.mcp_server.geocode_location",
+            return_value=[main_city, smaller_locality],
+        ):
+            async with create_connected_server_and_client_session(
+                mcp._mcp_server
+            ) as client:
+                result = await client.call_tool(
+                    "resolve_location",
+                    {"city": "Turin", "country": "Italy"},
+                )
+
+        payload = json.loads(result.content[0].text)
+        self.assertFalse(result.isError)
+        self.assertEqual(payload["status"], "resolved")
+        self.assertEqual(payload["matches"], [main_city])
+
+    async def test_city_wildfire_search_calculates_bbox_from_resolved_location(self) -> None:
+        location = {
+            "name": "Turin",
+            "latitude": 45,
+            "longitude": 7,
+            "country": "Italy",
+        }
+        with (
+            patch("eve_agent.mcp_server.geocode_location", return_value=[location]),
+            patch("eve_agent.mcp_server.search_open_wildfires", return_value=[]) as api,
+        ):
+            async with create_connected_server_and_client_session(
+                mcp._mcp_server
+            ) as client:
+                result = await client.call_tool(
+                    "search_wildfires_near_location",
+                    {
+                        "city": "Turin",
+                        "country": "Italy",
+                        "radius_km": 5,
+                        "limit": 3,
+                    },
+                )
+
+        self.assertFalse(result.isError)
+        payload = json.loads(result.content[0].text)
+        self.assertEqual(payload["location"], location)
+        self.assertEqual(payload["radius_km"], 5)
+        bbox = api.call_args.args[0]
+        self.assertAlmostEqual(bbox[0], 7 - 5 / (111.32 * 0.70710678))
+        self.assertAlmostEqual(bbox[2], 7 + 5 / (111.32 * 0.70710678))
+
+    async def test_ambiguous_city_does_not_run_wildfire_search(self) -> None:
+        matches = [
+            {"name": "Springfield", "admin1": "Illinois", "country": "United States"},
+            {"name": "Springfield", "admin1": "Missouri", "country": "United States"},
+        ]
+        with (
+            patch("eve_agent.mcp_server.geocode_location", return_value=matches),
+            patch("eve_agent.mcp_server.search_open_wildfires") as search,
+        ):
+            async with create_connected_server_and_client_session(
+                mcp._mcp_server
+            ) as client:
+                result = await client.call_tool(
+                    "search_wildfires_near_location",
+                    {"city": "Springfield", "radius_km": 10},
+                )
+
+        self.assertFalse(result.isError)
+        payload = json.loads(result.content[0].text)
+        self.assertEqual(payload["status"], "ambiguous")
+        self.assertEqual(payload["matches"], matches)
+        search.assert_not_called()
 
     async def test_wildfire_tool_calls_api_client_and_returns_compact_data(self) -> None:
         event = {

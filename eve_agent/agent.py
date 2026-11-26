@@ -33,6 +33,13 @@ source, and preserve units. If a tool fails, returns no relevant data, or does
 not support an answer, say so instead of guessing. EONET wildfire-category
 events may include prescribed burns; do not describe them as confirmed
 uncontrolled fires unless the tool data supports that conclusion.
+When a user gives a city name, use resolve_location and use only coordinates
+returned by that tool. If it returns no matches, ask for a different place. If
+it returns multiple matches, ask the user to identify the intended country or
+administrative region before continuing. For a wildfire search around a city,
+ask for an explicit radius in kilometers if one was not supplied, then use
+search_wildfires_near_location. Retain the selected location for follow-up
+questions in the same conversation.
 """
 
 

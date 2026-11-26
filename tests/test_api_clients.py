@@ -9,8 +9,10 @@ from unittest.mock import MagicMock, patch
 
 from eve_agent.api_clients import (
     ExternalAPIError,
+    geocode_location,
     get_historical_weather,
     search_open_wildfires,
+    wildfire_bbox_for_radius,
 )
 
 
@@ -31,6 +33,45 @@ class FakeResponse:
 
 
 class ApiClientTests(unittest.TestCase):
+    @patch("eve_agent.api_clients.urlopen")
+    def test_geocoding_returns_candidate_coordinates(
+        self, mock_urlopen: MagicMock
+    ) -> None:
+        mock_urlopen.return_value = FakeResponse(
+            {
+                "results": [
+                    {
+                        "name": "Turin",
+                        "latitude": 45.0703,
+                        "longitude": 7.6869,
+                        "admin1": "Piedmont",
+                        "country": "Italy",
+                    }
+                ]
+            }
+        )
+
+        locations = geocode_location("Turin", "Italy")
+
+        params = parse_qs(urlparse(mock_urlopen.call_args.args[0].full_url).query)
+        self.assertEqual(params["name"], ["Turin, Italy"])
+        self.assertEqual(locations[0]["latitude"], 45.0703)
+        self.assertEqual(locations[0]["country"], "Italy")
+
+    def test_radius_creates_eonet_ordered_bounding_box(self) -> None:
+        bbox = wildfire_bbox_for_radius(0, 0, 10)
+
+        self.assertAlmostEqual(bbox[0], -10 / 111.32)
+        self.assertAlmostEqual(bbox[1], 10 / 111.32)
+        self.assertAlmostEqual(bbox[2], 10 / 111.32)
+        self.assertAlmostEqual(bbox[3], -10 / 111.32)
+
+    def test_radius_must_be_positive_and_limited(self) -> None:
+        with self.assertRaisesRegex(ValueError, "radius_km"):
+            wildfire_bbox_for_radius(0, 0, 0)
+        with self.assertRaisesRegex(ValueError, "radius_km"):
+            wildfire_bbox_for_radius(0, 0, 501)
+
     @patch("eve_agent.api_clients.urlopen")
     def test_search_wildfires_sends_bounded_eonet_query(
         self, mock_urlopen: MagicMock

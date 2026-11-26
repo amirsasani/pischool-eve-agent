@@ -12,8 +12,11 @@ from urllib.request import Request, urlopen
 
 EONET_EVENTS_URL = "https://eonet.gsfc.nasa.gov/api/v3/events"
 OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+OPEN_METEO_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 DEFAULT_TIMEOUT_SECONDS = 10
 MAX_WILDFIRE_EVENTS = 100
+MAX_LOCATION_RESULTS = 10
+MAX_WILDFIRE_RADIUS_KM = 500
 
 
 class ExternalAPIError(RuntimeError):
@@ -114,6 +117,111 @@ def _validate_coordinate(value: float, name: str, lower: float, upper: float) ->
         or not lower <= value <= upper
     ):
         raise ValueError(f"{name} must be between {lower} and {upper}")
+
+
+def geocode_location(
+    city: str,
+    country: str | None = None,
+    *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> list[dict[str, Any]]:
+    """Return Open-Meteo location matches for a city and optional country."""
+    if not isinstance(city, str) or not city.strip():
+        raise ValueError("city must not be empty")
+    if country is not None and (not isinstance(country, str) or not country.strip()):
+        raise ValueError("country must not be empty when provided")
+
+    query = city.strip()
+    if country is not None:
+        query = f"{query}, {country.strip()}"
+    payload = _fetch_json(
+        "Open-Meteo Geocoding",
+        OPEN_METEO_GEOCODING_URL,
+        {"name": query, "count": str(MAX_LOCATION_RESULTS), "language": "en", "format": "json"},
+        timeout,
+    )
+    results = payload.get("results", [])
+    if results is None:
+        return []
+    if not isinstance(results, list):
+        raise ExternalAPIError("Open-Meteo Geocoding", "returned an unexpected results list")
+
+    locations = []
+    for result in results:
+        if not isinstance(result, dict):
+            raise ExternalAPIError("Open-Meteo Geocoding", "returned an invalid location")
+        name = result.get("name")
+        latitude = result.get("latitude")
+        longitude = result.get("longitude")
+        if not isinstance(name, str):
+            raise ExternalAPIError("Open-Meteo Geocoding", "returned a location without a name")
+        try:
+            _validate_coordinate(latitude, "latitude", -90, 90)
+            _validate_coordinate(longitude, "longitude", -180, 180)
+        except ValueError as exc:
+            raise ExternalAPIError("Open-Meteo Geocoding", str(exc)) from exc
+
+        location = {
+            "name": name,
+            "latitude": latitude,
+            "longitude": longitude,
+        }
+        for key in (
+            "id",
+            "admin1",
+            "admin2",
+            "country",
+            "country_code",
+            "feature_code",
+            "timezone",
+            "population",
+        ):
+            if isinstance(result.get(key), str):
+                location[key] = result[key]
+            elif key in {"id", "population"} and isinstance(result.get(key), int):
+                location[key] = result[key]
+        locations.append(location)
+    return locations
+
+
+def validate_wildfire_radius_km(radius_km: float) -> None:
+    if (
+        isinstance(radius_km, bool)
+        or not isinstance(radius_km, (int, float))
+        or not math.isfinite(radius_km)
+        or not 0 < radius_km <= MAX_WILDFIRE_RADIUS_KM
+    ):
+        raise ValueError(f"radius_km must be greater than 0 and at most {MAX_WILDFIRE_RADIUS_KM}")
+
+
+def wildfire_bbox_for_radius(
+    latitude: float,
+    longitude: float,
+    radius_km: float,
+) -> tuple[float, float, float, float]:
+    """Calculate an EONET-ordered bounding box around a point and radius."""
+    _validate_coordinate(latitude, "latitude", -90, 90)
+    _validate_coordinate(longitude, "longitude", -180, 180)
+    validate_wildfire_radius_km(radius_km)
+
+    # shortcut: local spherical approximation; use geodesic bounds if larger radii are allowed.
+    latitude_delta = radius_km / 111.32
+    min_lat = max(-90, latitude - latitude_delta)
+    max_lat = min(90, latitude + latitude_delta)
+
+    if min_lat <= -90 or max_lat >= 90:
+        min_lon, max_lon = -180, 180
+    else:
+        cosine = math.cos(math.radians(latitude))
+        longitude_delta = radius_km / (111.32 * cosine)
+        min_lon = longitude - longitude_delta
+        max_lon = longitude + longitude_delta
+        if min_lon < -180 or max_lon > 180:
+            raise ValueError(
+                "radius crosses the antimeridian; use a different location or smaller radius"
+            )
+
+    return min_lon, max_lat, max_lon, min_lat
 
 
 def search_open_wildfires(

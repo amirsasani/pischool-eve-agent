@@ -1,26 +1,37 @@
 # EVE Earth Observation MCP Server
 
 This repository contains API clients and an MCP server for NASA EONET
-wildfire-category events and Open-Meteo historical weather. It is part of a
-Pi School AI Research Engineer interview assignment.
+wildfire-category events and Open-Meteo geocoding and historical weather. It
+is part of a Pi School AI Research Engineer interview assignment.
 
 ## MCP server
 
-[`eve_agent/mcp_server.py`](eve_agent/mcp_server.py) exposes two MCP tools over
+[`eve_agent/mcp_server.py`](eve_agent/mcp_server.py) exposes four MCP tools over
 Streamable HTTP at `http://127.0.0.1:8001/mcp`:
 
+- `resolve_location` resolves a city and optional country to geocoding
+  candidates. Exact duplicate names within the same administrative area are
+  narrowed to the most populous result; otherwise, the agent asks which place
+  you mean instead of choosing coordinates.
 - `search_wildfire_events` retrieves open EONET wildfire-category events
   inside a bounding box. The box arguments are minimum longitude, maximum
   latitude, maximum longitude, and minimum latitude. Optional start and end
   dates must be supplied together; `limit` defaults to 20.
+- `search_wildfires_near_location` resolves a city and searches within an
+  explicit radius in kilometers (greater than 0 and at most 500). Ambiguous
+  city names return candidate locations without searching. The radius is
+  converted to an EONET bounding box by the application; existing bounding-box
+  searches remain available. Radius searches crossing the antimeridian are
+  rejected; use a smaller radius or an ordinary bounding-box search there.
 - `get_historical_weather` retrieves daily maximum temperature and total
-  precipitation for the requested coordinates and dates.
+  precipitation for the requested coordinates and dates. For city queries,
+  the agent first resolves the city and uses the returned coordinates.
 
 The EONET tool keeps event identifiers, titles, descriptions, source links,
 magnitudes, and geometry dates. Point coordinates are included; polygon
 coordinates are omitted to keep the tool response compact.
 
-Both tools call the API clients in
+The tools call the API clients in
 [`eve_agent/api_clients.py`](eve_agent/api_clients.py). Inputs are validated
 before requests are made; upstream failures are returned as MCP tool errors.
 
@@ -30,6 +41,7 @@ burns, so the category alone does not establish that a fire is uncontrolled.
 ## Data sources
 
 - [NASA EONET API v3](https://eonet.gsfc.nasa.gov/docs/v3)
+- [Open-Meteo Geocoding API](https://open-meteo.com/en/docs/geocoding-api)
 - [Open-Meteo Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api)
 
 The endpoints used here do not require an API key for the demonstrated
@@ -171,7 +183,9 @@ network access or a running Ollama instance.
 ## Scope and next steps
 
 This submission keeps the required core to one agent, two MCP tools, and
-process-local in-memory conversation state. The API has no authentication or
-rate limiting, and the optional A2A and Agent Skills bonuses are not
-implemented. For a deployed service, the next steps would be a persistent
-database-backed checkpointer, API access controls, and operational monitoring.
+process-local in-memory conversation state. The MCP server also provides
+location resolution and city-radius wildfire search. The API has no
+authentication or rate limiting, and the optional A2A and Agent Skills bonuses
+are not implemented. For a deployed service, the next steps would be a
+persistent database-backed checkpointer, API access controls, and operational
+monitoring.
