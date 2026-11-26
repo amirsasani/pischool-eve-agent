@@ -10,10 +10,12 @@ from eve_agent.settings import API_HOST, API_PORT
 TURNS = (
     "Use NASA EONET to find two open wildfire-category events in this bounding "
     "box: min_lon=-83, max_lat=39, max_lon=-78, min_lat=36. Set the result "
-    "limit to 2 and include each event title and point coordinates.",
+    "limit to 2 and include each event title and point coordinates. Cite the "
+    "tool's exact source field.",
     "For the second event you found, use its point coordinates to get Open-Meteo "
     "daily maximum temperature and precipitation from 2024-08-01 through "
-    "2024-08-03. Include the event title, coordinates, units, and source.",
+    "2024-08-03. Include the event title, coordinates, units, and only the "
+    "weather tool's exact source field.",
     "Use the historical weather tool for that same event location from "
     "2024-99-99 through 2024-99-99. If it fails, explain that the weather "
     "couldn't be retrieved and ask me for valid YYYY-MM-DD dates. Don't invent "
@@ -33,6 +35,11 @@ LONG_CONTEXT_TURNS = (
     "and temperature and total precipitation.",
 )
 
+RELIABILITY_TURNS = (
+    *TURNS[:2],
+    "How reliable is this analysis?",
+)
+
 
 def _ask_agent(session_id: str, message: str) -> str:
     request = Request(
@@ -50,14 +57,28 @@ def _ask_agent(session_id: str, message: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument(
         "--long-context",
         action="store_true",
         help="run eight turns to demonstrate conversation pruning",
     )
+    modes.add_argument(
+        "--reliability",
+        action="store_true",
+        help="run the data reliability skill demonstration",
+    )
     args = parser.parse_args()
-    turns = LONG_CONTEXT_TURNS if args.long_context else TURNS
-    session_id = f"stage8-demo-{uuid4().hex[:8]}"
+    if args.reliability:
+        turns = RELIABILITY_TURNS
+        session_prefix = "reliability-demo"
+    elif args.long_context:
+        turns = LONG_CONTEXT_TURNS
+        session_prefix = "stage8-demo"
+    else:
+        turns = TURNS
+        session_prefix = "stage8-demo"
+    session_id = f"{session_prefix}-{uuid4().hex[:8]}"
     print(f"Session: {session_id}")
     for turn_number, message in enumerate(turns, start=1):
         print(f"\nTurn {turn_number}: {message}")

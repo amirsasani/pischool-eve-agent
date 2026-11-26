@@ -76,7 +76,7 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("limitations", result["messages"][-1].content)
         self.assertEqual(len(skill_tool_calls), 1)
-        self.assertIn("Do not assign a numeric reliability score.", skill_tool_calls[0])
+        self.assertIn("Do not assign a numeric reliability score", skill_tool_calls[0])
 
     async def test_ordinary_request_does_not_load_skill(self) -> None:
         model_calls = []
@@ -98,6 +98,7 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["messages"][-1].content, "The weather was 30 °C.")
         self.assertEqual(len(model_calls), 1)
         self.assertFalse(any(isinstance(message, ToolMessage) for message in model_calls[0]))
+        self.assertNotIn("Use the original tool results as evidence.", SYSTEM_PROMPT)
 
     async def test_agent_calls_tool_then_answers_from_its_result(self) -> None:
         tool_calls: list[dict[str, object]] = []

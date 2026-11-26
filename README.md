@@ -140,6 +140,26 @@ shows pruning after the sixth user turn while retaining the recent weather
 context. Normal API requests write to the ignored `logs/agent-traces.jsonl` by
 default, not to these committed examples.
 
+To demonstrate the on-demand data reliability skill, start the API with a
+trace path for the example:
+
+```bash
+TRACE_FILE=examples/traces/data-reliability-demo.jsonl python -m eve_agent.api
+```
+
+Then run the same demo script with:
+
+```bash
+python -m scripts.run_demo --reliability
+```
+
+The three-turn conversation searches EONET, gets weather for an event, then
+asks for an evidence review. The agent sees the skill tool description on
+ordinary turns but loads the full
+[`SKILL.md`](./skills/data-reliability-report/SKILL.md) only for the review.
+[`examples/traces/data-reliability-demo.jsonl`](./examples/traces/data-reliability-demo.jsonl)
+shows the skill-loading tool call and its resulting answer.
+
 The graph has an assistant node and an MCP-backed tools node. The assistant
 routes tool calls to the tools node, then runs again with the result; it stops
 when the model returns a final answer. Tool definitions are loaded over
@@ -184,8 +204,8 @@ network access or a running Ollama instance.
 
 This submission keeps the required core to one agent, two MCP tools, and
 process-local in-memory conversation state. The MCP server also provides
-location resolution and city-radius wildfire search. The API has no
-authentication or rate limiting, and the optional A2A and Agent Skills bonuses
-are not implemented. For a deployed service, the next steps would be a
-persistent database-backed checkpointer, API access controls, and operational
-monitoring.
+location resolution and city-radius wildfire search. The on-demand data
+reliability Agent Skill is implemented; the optional A2A bonus is not. The API
+has no authentication or rate limiting. For a deployed service, the next
+steps would be a persistent database-backed checkpointer, API access controls,
+and operational monitoring.

@@ -10,7 +10,7 @@ class SkillToolTests(unittest.TestCase):
 
         self.assertIn("name: data-reliability-report", frontmatter)
         self.assertIn("description:", frontmatter)
-        self.assertIn("Do not assign a numeric reliability score.", content)
+        self.assertIn("Do not assign a numeric reliability score", content)
 
 
 if __name__ == "__main__":
