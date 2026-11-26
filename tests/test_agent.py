@@ -2,7 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableLambda
@@ -14,12 +14,91 @@ from eve_agent.agent import (
     TOOL_OUTPUT_TRUNCATION_MARKER,
     SYSTEM_PROMPT,
     _create_agent_graph,
+    build_agent,
     invoke_agent_turn,
 )
+from eve_agent.skill_tools import load_data_reliability_report
 from eve_agent.tracing import AgentTrace
 
 
 class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
+    async def test_build_agent_registers_reliability_skill_loader(self) -> None:
+        with (
+            patch("eve_agent.agent.load_mcp_tools", new_callable=AsyncMock) as load_tools,
+            patch("eve_agent.agent.ChatOllama") as chat_model,
+        ):
+            load_tools.return_value = []
+            chat_model.return_value.bind_tools.return_value = RunnableLambda(
+                lambda _: AIMessage(content="ok")
+            )
+            await build_agent()
+
+        model_tools = chat_model.return_value.bind_tools.call_args.args[0]
+        self.assertIn(load_data_reliability_report, model_tools)
+
+    async def test_reliability_request_loads_skill_on_demand(self) -> None:
+        skill_tool_calls = []
+
+        def scripted_model(messages: list[object]) -> AIMessage:
+            skill_result = next(
+                (
+                    message
+                    for message in reversed(messages)
+                    if isinstance(message, ToolMessage)
+                    and message.name == "load_data_reliability_report"
+                ),
+                None,
+            )
+            if skill_result is not None:
+                skill_tool_calls.append(skill_result.content)
+                return AIMessage(content="The available evidence has limitations.")
+            return AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "load_data_reliability_report",
+                        "args": {},
+                        "id": "reliability-skill-call",
+                        "type": "tool_call",
+                    }
+                ],
+            )
+
+        agent = _create_agent_graph(
+            RunnableLambda(scripted_model),
+            [load_data_reliability_report],
+        )
+        result = await invoke_agent_turn(
+            agent,
+            "reliability-session",
+            "How reliable is the analysis?",
+        )
+
+        self.assertIn("limitations", result["messages"][-1].content)
+        self.assertEqual(len(skill_tool_calls), 1)
+        self.assertIn("Do not assign a numeric reliability score.", skill_tool_calls[0])
+
+    async def test_ordinary_request_does_not_load_skill(self) -> None:
+        model_calls = []
+
+        def scripted_model(messages: list[object]) -> AIMessage:
+            model_calls.append(messages)
+            return AIMessage(content="The weather was 30 °C.")
+
+        agent = _create_agent_graph(
+            RunnableLambda(scripted_model),
+            [load_data_reliability_report],
+        )
+        result = await invoke_agent_turn(
+            agent,
+            "ordinary-session",
+            "What was the maximum temperature?",
+        )
+
+        self.assertEqual(result["messages"][-1].content, "The weather was 30 °C.")
+        self.assertEqual(len(model_calls), 1)
+        self.assertFalse(any(isinstance(message, ToolMessage) for message in model_calls[0]))
+
     async def test_agent_calls_tool_then_answers_from_its_result(self) -> None:
         tool_calls: list[dict[str, object]] = []
 

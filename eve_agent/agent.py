@@ -19,6 +19,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 
 from eve_agent.mcp_client import load_mcp_tools
 from eve_agent.settings import OLLAMA_MODEL
+from eve_agent.skill_tools import load_data_reliability_report
 from eve_agent.tracing import AgentTrace
 
 MAX_HISTORY_TURNS = 6
@@ -40,6 +41,9 @@ administrative region before continuing. For a wildfire search around a city,
 ask for an explicit radius in kilometers if one was not supplied, then use
 search_wildfires_near_location. Retain the selected location for follow-up
 questions in the same conversation.
+For requests to assess an earlier analysis's reliability, evidence, or
+limitations, call load_data_reliability_report and follow its instructions.
+Do not load that skill for ordinary factual questions.
 """
 
 
@@ -111,6 +115,7 @@ def _create_agent_graph(
 async def build_agent() -> CompiledStateGraph:
     """Build the agent and load its tools from the running MCP server."""
     tools = await load_mcp_tools()
+    tools.append(load_data_reliability_report)
     model = ChatOllama(model=OLLAMA_MODEL, temperature=0).bind_tools(tools)
     return _create_agent_graph(model, tools)
 
